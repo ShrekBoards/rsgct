@@ -1,5 +1,7 @@
 use std::{env, fs::File, io::{Error, Read, Seek, SeekFrom}, path::Path, process};
 
+use image::{ImageBuffer, ImageDecoder, Rgba, dxt::{DXTVariant, DxtDecoder}};
+
 fn main() {
 	let args: Vec<_> = env::args().collect();
 
@@ -88,8 +90,8 @@ fn extract(args: Vec<String>) {
 	}
 
     // TODO: support -w & -h
-	println!("{}", width);
-	println!("{}", height);
+	//println!("{}", width);
+	//println!("{}", height);
 
 	if width == 0 || height == 0 {
 		println!("Width/Height from GCT incorrect ({}/{})", width, height);
@@ -113,7 +115,31 @@ fn extract(args: Vec<String>) {
 
     println!("Extracting image from {} of size {}x{} from position {:#X}", fn_string, width, height, start);
 
-    
+    //let image_buffer: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width as u32, height as u32);
+
+	let dxt_result = DxtDecoder::new(gct_file, width as u32, height as u32, DXTVariant::DXT1);
+	let dxt_decoder: DxtDecoder<File>;
+	match dxt_result {
+    	Ok(decoder) => dxt_decoder = decoder,
+    	Err(error) => {
+			let error_string = error.to_string();
+			println!("DXT Decode Error: {}\n", error_string);
+			usage();
+			process::exit(exitcode::IOERR);
+		},
+	}
+
+	let mut dxt_buffer: Vec<u8> = vec![0; dxt_decoder.total_bytes() as usize];
+	let image_result = dxt_decoder.read_image(&mut dxt_buffer);
+	match image_result {
+    	Ok(_) => {}
+    	Err(error) => {
+			let error_string = error.to_string();
+			println!("DXT Read Error: {}\n", error_string);
+			usage();
+			process::exit(exitcode::IOERR);
+		},
+	}
 }
 
 fn inject(args: Vec<String>) {
