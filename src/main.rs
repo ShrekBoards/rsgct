@@ -1,4 +1,4 @@
-use std::{env, fs::File, io::{Error, Read, Seek, SeekFrom}, process};
+use std::{env, fs::File, io::{Error, Read, Seek, SeekFrom}, path::Path, process};
 
 fn main() {
 	let args: Vec<_> = env::args().collect();
@@ -28,9 +28,21 @@ fn usage() {
 }
 
 fn extract(args: Vec<String>) {
-	let file_path = &args[2];
+	let file_path_string = &args[2];
+    let path = Path::new(file_path_string);
+    let filename = path.file_name();
+    let fn_string: &str;
+    match filename {
+        Some(fname) => {
+            match fname.to_str() {
+                Some(str) => fn_string = str,
+                None => fn_string = "[filename error]",
+            }
+        }
+        None => fn_string = "[filename error]",
+    }
 
-	let gct = File::open(file_path);
+	let gct = File::open(file_path_string);
 	let mut gct_file: File;
 	match gct {
 		Ok(f) => gct_file = f,
@@ -75,8 +87,33 @@ fn extract(args: Vec<String>) {
 		},
 	}
 
+    // TODO: support -w & -h
 	println!("{}", width);
 	println!("{}", height);
+
+	if width == 0 || height == 0 {
+		println!("Width/Height from GCT incorrect ({}/{})", width, height);
+		usage();
+		process::exit(exitcode::NOINPUT);
+	}
+
+    // TODO: support -s
+    let start = 0x40;
+
+    let seek_result = gct_file.seek(SeekFrom::Start(start));
+	match seek_result {
+		Ok(_) => {},
+		Err(error) => {
+			let error_string = error.to_string();
+			println!("Seek Error: {}\n", error_string);
+			usage();
+			process::exit(exitcode::IOERR);
+		},
+	}
+
+    println!("Extracting image from {} of size {}x{} from position {:#X}", fn_string, width, height, start);
+
+    
 }
 
 fn inject(args: Vec<String>) {
