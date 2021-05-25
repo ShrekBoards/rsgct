@@ -1,6 +1,16 @@
-use std::{env, fs::File, io::{Error, Read, Seek, SeekFrom}, path::Path, process};
+use std::{
+	env,
+	fs::File,
+	io::{Error, Read, Seek, SeekFrom},
+	path::Path,
+	process, u32,
+};
 
-use image::{ImageBuffer, ImageDecoder, Rgba, dxt::{DXTVariant, DxtDecoder}};
+use image::{
+	dxt::{DXTVariant, DxtDecoder},
+	png::PngEncoder,
+	DynamicImage, ImageBuffer, ImageDecoder, Rgba, RgbaImage,
+};
 
 fn main() {
 	let args: Vec<_> = env::args().collect();
@@ -10,7 +20,7 @@ fn main() {
 		usage();
 		process::exit(exitcode::USAGE);
 	}
-	
+
 	let mode_request = &args[1];
 	match mode_request.as_str() {
 		"-e" => extract(args),
@@ -19,7 +29,7 @@ fn main() {
 			println!("Invalid operating mode.\n");
 			usage();
 			process::exit(exitcode::USAGE);
-		},
+		}
 	}
 }
 
@@ -31,20 +41,18 @@ fn usage() {
 
 fn extract(args: Vec<String>) {
 	let file_path_string = &args[2];
-    let path = Path::new(file_path_string);
-    let filename = path.file_name();
-    let fn_string: &str;
-    match filename {
-        Some(fname) => {
-            match fname.to_str() {
-                Some(str) => fn_string = str,
-                None => fn_string = "[filename error]",
-            }
-        }
-        None => fn_string = "[filename error]",
-    }
+	let path = Path::new(file_path_string);
+	let filename = path.file_name();
+	let fn_string: &str;
+	match filename {
+		Some(fname) => match fname.to_str() {
+			Some(str) => fn_string = str,
+			None => fn_string = "[filename error]",
+		},
+		None => fn_string = "[filename error]",
+	}
 
-	let gct = File::open(file_path_string);
+	let gct = File::open(path);
 	let mut gct_file: File;
 	match gct {
 		Ok(f) => gct_file = f,
@@ -58,15 +66,15 @@ fn extract(args: Vec<String>) {
 
 	let seek_result = gct_file.seek(SeekFrom::Start(0x10));
 	match seek_result {
-		Ok(_) => {},
+		Ok(_) => {}
 		Err(error) => {
 			let error_string = error.to_string();
 			println!("Seek Error: {}\n", error_string);
 			usage();
 			process::exit(exitcode::IOERR);
-		},
+		}
 	}
-	
+
 	let width: i32;
 	match read_short(&gct_file) {
 		Ok(w) => width = w,
@@ -75,7 +83,7 @@ fn extract(args: Vec<String>) {
 			println!("{}\n", error_string);
 			usage();
 			process::exit(exitcode::IOERR);
-		},
+		}
 	}
 
 	let height: i32;
@@ -86,10 +94,10 @@ fn extract(args: Vec<String>) {
 			println!("{}\n", error_string);
 			usage();
 			process::exit(exitcode::IOERR);
-		},
+		}
 	}
 
-    // TODO: support -w & -h
+	// TODO: support -w & -h
 	//println!("{}", width);
 	//println!("{}", height);
 
@@ -99,47 +107,91 @@ fn extract(args: Vec<String>) {
 		process::exit(exitcode::NOINPUT);
 	}
 
-    // TODO: support -s
-    let start = 0x40;
+	// TODO: support -s
+	//let start = 0x40;
+	let start = 0x40;
 
-    let seek_result = gct_file.seek(SeekFrom::Start(start));
+	let seek_result = gct_file.seek(SeekFrom::Start(start));
 	match seek_result {
-		Ok(_) => {},
+		Ok(_) => {}
 		Err(error) => {
 			let error_string = error.to_string();
 			println!("Seek Error: {}\n", error_string);
 			usage();
 			process::exit(exitcode::IOERR);
-		},
+		}
 	}
 
-    println!("Extracting image from {} of size {}x{} from position {:#X}", fn_string, width, height, start);
+	println!(
+		"Extracting image from {} of size {}x{} from position {:#X}",
+		fn_string, width, height, start
+	);
 
-    //let image_buffer: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width as u32, height as u32);
+	//let mut gct_buf = Vec::new();
+	//let _ = gct_file.read_to_end(&mut gct_buf).unwrap();
+
+	//let image_buffer: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width as u32, height as u32);
 
 	let dxt_result = DxtDecoder::new(gct_file, width as u32, height as u32, DXTVariant::DXT1);
 	let dxt_decoder: DxtDecoder<File>;
 	match dxt_result {
-    	Ok(decoder) => dxt_decoder = decoder,
-    	Err(error) => {
+		Ok(decoder) => dxt_decoder = decoder,
+		Err(error) => {
 			let error_string = error.to_string();
 			println!("DXT Decode Error: {}\n", error_string);
 			usage();
 			process::exit(exitcode::IOERR);
-		},
+		}
 	}
 
-	let mut dxt_buffer: Vec<u8> = vec![0; dxt_decoder.total_bytes() as usize];
+	/*let mut dxt_buffer: Vec<u8> = vec![0; dxt_decoder.total_bytes() as usize];
 	let image_result = dxt_decoder.read_image(&mut dxt_buffer);
 	match image_result {
-    	Ok(_) => {}
-    	Err(error) => {
+		Ok(_) => {}
+		Err(error) => {
 			let error_string = error.to_string();
 			println!("DXT Read Error: {}\n", error_string);
 			usage();
 			process::exit(exitcode::IOERR);
 		},
+	}*/
+
+	//let img: RgbaImage = ImageBuffer::new(width as u32, height as u32);
+
+	let dynamic_image: DynamicImage;
+	let di_result = DynamicImage::from_decoder(dxt_decoder);
+	match di_result {
+		Ok(di) => dynamic_image = di,
+		Err(error) => {
+			let error_string = error.to_string();
+			println!("Dynamic Image Error: {}\n", error_string);
+			usage();
+			process::exit(exitcode::IOERR);
+		}
 	}
+
+	let _ = dynamic_image.save(Path::new("test.png"));
+
+	//let rgba_image = dynamic_image.to_rgba8();
+
+	//let _ = rgba_image.save(Path::new("test.png"));
+
+	//let ref fout = File::create(&).unwrap();
+	//let _ = DynamicImage::ImageRgba8(dxt_buffer).save(Path::new("test.png"));
+
+	//let png_result = PngEncoder::new(w)
+	//let encode_result = PngEncoder::encode(&dxt_buffer, width as u32, height as u32, image::ColorType::Rgba8);
+
+	/*let save_result = image::save_buffer("test.png", &dxt_buffer, width as u32, height as u32, image::ColorType::Rgba8);
+	match save_result {
+		Ok(_) => println!("test.png saved"),
+		Err(error) => {
+			let error_string = error.to_string();
+			println!("PNG Save Error: {}\n", error_string);
+			usage();
+			process::exit(exitcode::IOERR);
+		},
+	}*/
 }
 
 fn inject(args: Vec<String>) {
