@@ -253,8 +253,8 @@ fn write_block(
     y: u32,
     png_buffer: &mut RgbaImage,
 ) {
-    for dy in 0..3 as u32 {
-        for dx in 0..3 as u32 {
+    for dy in 0..4 as u32 {
+        for dx in 0..4 as u32 {
             let block_index = (dy * 4 + dx) as usize;
             let colour_index = block[block_index] as usize;
             png_buffer.put_pixel(x + dx, y + dy, colours[colour_index]);
@@ -317,7 +317,7 @@ fn get_block(gct: &File) -> [u32; 16] {
     }
 
     let mut block: [u32; 16] = [0; 16];
-    for i in 0..15 {
+    for i in 0..16 {
         block[i] = (indexes >> 30 - (2 * i)) & 0b11; // 2-bit index for each of 16 pixels in 4x4 group
     }
 
