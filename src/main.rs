@@ -6,11 +6,7 @@ use std::{
     process, u32,
 };
 
-use image::{
-    dxt::{DXTVariant, DxtDecoder},
-    png::PngEncoder,
-    DynamicImage, ImageBuffer, ImageDecoder, Rgb, Rgba, RgbaImage,
-};
+use image::{Rgb, Rgba, RgbaImage};
 
 fn main() {
     let args: Vec<_> = env::args().collect();
