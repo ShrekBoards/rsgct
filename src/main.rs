@@ -43,13 +43,23 @@ fn extract(args: Vec<String>) {
     let file_path_string = &args[2];
     let path = Path::new(file_path_string);
     let filename = path.file_name();
+    let fn_no_ext = path.file_stem();
     let fn_string: &str;
+    let fs_string: &str;
     match filename {
         Some(fname) => match fname.to_str() {
             Some(str) => fn_string = str,
             None => fn_string = "[filename error]",
         },
         None => fn_string = "[filename error]",
+    }
+    
+    match fn_no_ext {
+        Some(fname) => match fname.to_str() {
+            Some(str) => fs_string = str,
+            None => fs_string = "[filename error]",
+        },
+        None => fs_string = "[filename error]",
     }
 
     let gct = File::open(path);
@@ -126,7 +136,21 @@ fn extract(args: Vec<String>) {
         fn_string, width, height, start
     );
 
-    create_png(&gct_file, width, height);
+    let png_buffer = create_png(&gct_file, width, height);
+
+    let png_path = fs_string.to_owned() + ".png";
+    let save_result = png_buffer.save(&png_path);
+    match save_result {
+        Ok(_) => {}
+        Err(error) => {
+            let error_string = error.to_string();
+            println!("{}\n", error_string);
+            usage();
+            process::exit(exitcode::IOERR);
+        }
+    }
+
+    println!("Extraction completed successfully to {}", png_path);
 }
 
 fn inject(args: Vec<String>) {
@@ -188,7 +212,7 @@ fn read_int(mut file: &File) -> Result<u32, Error> {
     return Ok(i);
 }
 
-fn create_png(gct: &File, width: u32, height: u32) {
+fn create_png(gct: &File, width: u32, height: u32) -> RgbaImage {
     let mut png_buffer = RgbaImage::new(width, height);
 
     let mut x: u32 = 0;
@@ -224,18 +248,7 @@ fn create_png(gct: &File, width: u32, height: u32) {
         }
     }
 
-    let save_result = png_buffer.save("test.png");
-    match save_result {
-        Ok(_) => {}
-        Err(error) => {
-            let error_string = error.to_string();
-            println!("{}\n", error_string);
-            usage();
-            process::exit(exitcode::IOERR);
-        }
-    }
-
-    println!("we did it!!");
+    return png_buffer;
 }
 
 fn rw_block(gct: &File, x: u32, y: u32, png_buffer: &mut RgbaImage) {
