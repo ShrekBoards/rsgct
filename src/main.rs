@@ -293,22 +293,26 @@ fn get_next_colours(gct: &File) -> [Rgba<u8>; 4] {
             process::exit(exitcode::IOERR);
         }
     }
-
-    let lc2: u32;
-    let lc3: u32;
-
-    if lc0 >= lc1 {
-        lc2 = mix_colours(lc0, lc1, 2, 1, 3); // 2/3 & 1/3
-        lc3 = mix_colours(lc0, lc1, 1, 2, 3); // 1/3 & 2/3
-    } else {
-        lc2 = mix_colours(lc0, lc1, 1, 1, 2); // 1/2 & trans
-        lc3 = 0; // TODO: make lc3 force rgb565_to_rgba_colour to generate transparency
-    }
-
+    
     let c0 = rgb565_to_rgba_colour(lc0);
     let c1 = rgb565_to_rgba_colour(lc1);
-    let c2 = rgb565_to_rgba_colour(lc2);
-    let c3 = rgb565_to_rgba_colour(lc3);
+    let c2: Rgba<u8>;
+    let c3: Rgba<u8>;
+
+    if lc0 >= lc1 {
+        let lc2 = mix_colours(lc0, lc1, 2, 1, 3); // 2/3 & 1/3
+        c2 = rgb565_to_rgba_colour(lc2);
+        
+        let lc3 = mix_colours(lc0, lc1, 1, 2, 3); // 1/3 & 2/3
+        c3 = rgb565_to_rgba_colour(lc3);
+
+    } else {
+        let lc2 = mix_colours(lc0, lc1, 1, 1, 2); // 1/2 each
+        c2 = rgb565_to_rgba_colour(lc2);
+
+        // if lc0 is smaller than lc1 in DXT1, c3 should be transparent
+        c3 = Rgba([0, 0, 0, 0]);
+    }
 
     return [c0, c1, c2, c3];
 }
