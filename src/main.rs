@@ -9,7 +9,7 @@ use std::{
 use image::{
     dxt::{DXTVariant, DxtDecoder},
     png::PngEncoder,
-    DynamicImage, ImageBuffer, ImageDecoder, Rgba, RgbaImage,
+    DynamicImage, ImageBuffer, ImageDecoder, Rgb, Rgba, RgbaImage,
 };
 
 fn main() {
@@ -176,22 +176,32 @@ fn read_short(mut file: &File) -> Result<u32, Error> {
     file.read(&mut buffer)?;
 
     let s = u16::from_be_bytes(buffer);
-    let width = u32::from(s);
-    return Ok(width);
+    let i = u32::from(s);
+    return Ok(i);
+}
+
+fn read_int(mut file: &File) -> Result<u32, Error> {
+    let mut buffer = [0; 4]; // 4 byte buffer
+    file.read(&mut buffer)?;
+
+    let i = u32::from_be_bytes(buffer);
+    return Ok(i);
 }
 
 fn create_png(gct: &File, width: u32, height: u32) {
-    let x: u32 = 0;
-    let y: u32 = 0;
+    let mut png_buffer = RgbaImage::new(width, height);
+
+    let mut x: u32 = 0;
+    let mut y: u32 = 0;
 
     let mut dx: u32 = 0;
     let mut dy: u32 = 0;
 
-    let dyHack = 0;
+    let mut dy_hack = 0;
 
     while y < height - 4 {
         if dx >= 8 {
-            if dyHack == x {
+            if dy_hack == x {
                 dy = 4;
             } else {
                 dy = 0;
@@ -199,14 +209,63 @@ fn create_png(gct: &File, width: u32, height: u32) {
             dx = 0;
         }
 
-        rw_block(&gct, x + dx, y + dy);
+        rw_block(&gct, x + dx, y + dy, &mut png_buffer);
+
+        dy_hack = x;
+        if dx == 4 && dy == 4 {
+            x += 8;
+        }
+
+        dx += 4;
+
+        if x > width - 4 {
+            x = 0;
+            y += 8;
+        }
+    }
+
+    let save_result = png_buffer.save("test.png");
+    match save_result {
+        Ok(_) => {}
+        Err(error) => {
+            let error_string = error.to_string();
+            println!("{}\n", error_string);
+            usage();
+            process::exit(exitcode::IOERR);
+        }
+    }
+
+    println!("we did it!!");
+}
+
+fn rw_block(gct: &File, x: u32, y: u32, png_buffer: &mut RgbaImage) {
+    let colours = get_next_colours(&gct);
+
+    let block = get_block(&gct);
+
+    write_block(block, colours, x, y, png_buffer);
+}
+
+fn write_block(
+    block: [u32; 16],
+    colours: [Rgba<u8>; 4],
+    x: u32,
+    y: u32,
+    png_buffer: &mut RgbaImage,
+) {
+    for dy in 0..3 as u32 {
+        for dx in 0..3 as u32 {
+            let block_index = (dy * 4 + dx) as usize;
+            let colour_index = block[block_index] as usize;
+            png_buffer.put_pixel(x + dx, y + dy, colours[colour_index]);
+        }
     }
 }
 
-fn rw_block(gct: &File, dx: u32, dy: u32) {
-    let mut c0: u32;
+fn get_next_colours(gct: &File) -> [Rgba<u8>; 4] {
+    let mut lc0: u32;
     match read_short(&gct) {
-        Ok(s) => c0 = s,
+        Ok(s) => lc0 = s,
         Err(error) => {
             let error_string = error.to_string();
             println!("{}\n", error_string);
@@ -215,9 +274,9 @@ fn rw_block(gct: &File, dx: u32, dy: u32) {
         }
     }
 
-    let mut c1: u32;
+    let mut lc1: u32;
     match read_short(&gct) {
-        Ok(s) => c1 = s,
+        Ok(s) => lc1 = s,
         Err(error) => {
             let error_string = error.to_string();
             println!("{}\n", error_string);
@@ -226,25 +285,47 @@ fn rw_block(gct: &File, dx: u32, dy: u32) {
         }
     }
 
-    let mut c2: u32 = 0;
-    let mut c3: u32 = 0;
+    let mut lc2: u32 = 0;
+    let mut lc3: u32 = 0;
 
-    if c0 >= c1 {
-        c2 = mix_colours(c0, c1, 2, 1, 3); // 2/3 & 1/3
-        c3 = mix_colours(c0, c1, 1, 2, 3); // 1/3 & 2/3
+    if lc0 >= lc1 {
+        lc2 = mix_colours(lc0, lc1, 2, 1, 3); // 2/3 & 1/3
+        lc3 = mix_colours(lc0, lc1, 1, 2, 3); // 1/3 & 2/3
     } else {
-        c2 = mix_colours(c0, c1, 1, 1, 2); // 1/2 & trans
-        c3 = 0;
+        lc2 = mix_colours(lc0, lc1, 1, 1, 2); // 1/2 & trans
+        lc3 = 0;
     }
 
-    c0 = expand_colour(c0);
-    c1 = expand_colour(c1);
-    c2 = expand_colour(c2);
-    c3 = expand_colour(c3);
+    let c0 = rgb565_to_rgba_colour(lc0);
+    let c1 = rgb565_to_rgba_colour(lc1);
+    let c2 = rgb565_to_rgba_colour(lc2);
+    let c3 = rgb565_to_rgba_colour(lc3);
+
+    return [c0, c1, c2, c3];
+}
+
+fn get_block(gct: &File) -> [u32; 16] {
+    let indexes: u32;
+    match read_int(&gct) {
+        Ok(s) => indexes = s,
+        Err(error) => {
+            let error_string = error.to_string();
+            println!("{}\n", error_string);
+            usage();
+            process::exit(exitcode::IOERR);
+        }
+    }
+
+    let mut block: [u32; 16] = [0; 16];
+    for i in 0..15 {
+        block[i] = (indexes >> 30 - (2 * i)) & 0b11; // 2-bit index for each of 16 pixels in 4x4 group
+    }
+
+    return block;
 }
 
 // expand rgb565 to rgb888
-fn expand_colour(c: u32) -> u32 {
+fn rgb565_to_rgb888(c: u32) -> u32 {
     // 5-bit to 8-bit lookup table
     const CC58: [u32; 32] = [
         0x00, 0x08, 0x10, 0x19, 0x21, 0x29, 0x31, 0x3a, 0x42, 0x4a, 0x52, 0x5a, 0x63, 0x6b, 0x73,
@@ -265,6 +346,62 @@ fn expand_colour(c: u32) -> u32 {
     let b5 = (c & 0x1F) as usize;
 
     return 0xFF << 24 | CC58[r5] << 16 | CC68[g6] << 8 | CC58[b5];
+}
+
+// expand rgb565 to rgb888 and put it in Rgb<u8>
+fn rgb565_to_rgb_colour(c: u32) -> Rgb<u8> {
+    // 5-bit to 8-bit lookup table
+    const CC58: [u8; 32] = [
+        0x00, 0x08, 0x10, 0x19, 0x21, 0x29, 0x31, 0x3a, 0x42, 0x4a, 0x52, 0x5a, 0x63, 0x6b, 0x73,
+        0x7b, 0x84, 0x8c, 0x94, 0x9c, 0xa5, 0xad, 0xb5, 0xbd, 0xc5, 0xce, 0xd6, 0xde, 0xe6, 0xef,
+        0xf7, 0xff,
+    ];
+    // 6-bit to 8-bit lookup table
+    const CC68: [u8; 64] = [
+        0x00, 0x04, 0x08, 0x0c, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x28, 0x2d, 0x31, 0x35, 0x39,
+        0x3d, 0x41, 0x45, 0x49, 0x4d, 0x51, 0x55, 0x59, 0x5d, 0x61, 0x65, 0x69, 0x6d, 0x71, 0x75,
+        0x79, 0x7d, 0x82, 0x86, 0x8a, 0x8e, 0x92, 0x96, 0x9a, 0x9e, 0xa2, 0xa6, 0xaa, 0xae, 0xb2,
+        0xb6, 0xba, 0xbe, 0xc2, 0xc6, 0xca, 0xce, 0xd2, 0xd7, 0xdb, 0xdf, 0xe3, 0xe7, 0xeb, 0xef,
+        0xf3, 0xf7, 0xfb, 0xff,
+    ];
+
+    let r5 = (c >> 11) as usize;
+    let g6 = (c >> 5 & 0x3F) as usize;
+    let b5 = (c & 0x1F) as usize;
+
+    let r8 = CC58[r5];
+    let g8 = CC68[g6];
+    let b8 = CC58[b5];
+
+    return Rgb([r8, g8, b8]);
+}
+
+// expand rgb565 to rgb888 and put it in Rgb<u8>
+fn rgb565_to_rgba_colour(c: u32) -> Rgba<u8> {
+    // 5-bit to 8-bit lookup table
+    const CC58: [u8; 32] = [
+        0x00, 0x08, 0x10, 0x19, 0x21, 0x29, 0x31, 0x3a, 0x42, 0x4a, 0x52, 0x5a, 0x63, 0x6b, 0x73,
+        0x7b, 0x84, 0x8c, 0x94, 0x9c, 0xa5, 0xad, 0xb5, 0xbd, 0xc5, 0xce, 0xd6, 0xde, 0xe6, 0xef,
+        0xf7, 0xff,
+    ];
+    // 6-bit to 8-bit lookup table
+    const CC68: [u8; 64] = [
+        0x00, 0x04, 0x08, 0x0c, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x28, 0x2d, 0x31, 0x35, 0x39,
+        0x3d, 0x41, 0x45, 0x49, 0x4d, 0x51, 0x55, 0x59, 0x5d, 0x61, 0x65, 0x69, 0x6d, 0x71, 0x75,
+        0x79, 0x7d, 0x82, 0x86, 0x8a, 0x8e, 0x92, 0x96, 0x9a, 0x9e, 0xa2, 0xa6, 0xaa, 0xae, 0xb2,
+        0xb6, 0xba, 0xbe, 0xc2, 0xc6, 0xca, 0xce, 0xd2, 0xd7, 0xdb, 0xdf, 0xe3, 0xe7, 0xeb, 0xef,
+        0xf3, 0xf7, 0xfb, 0xff,
+    ];
+
+    let r5 = (c >> 11) as usize;
+    let g6 = (c >> 5 & 0x3F) as usize;
+    let b5 = (c & 0x1F) as usize;
+
+    let r8 = CC58[r5];
+    let g8 = CC68[g6];
+    let b8 = CC58[b5];
+
+    return Rgba([r8, g8, b8, 255]);
 }
 
 fn mix_colours(c0: u32, c1: u32, mul1: u32, mul2: u32, div: u32) -> u32 {
